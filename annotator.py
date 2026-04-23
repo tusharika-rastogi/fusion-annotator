@@ -112,12 +112,18 @@ def lookup_exon(
     if not in_exon.empty:
         return int(in_exon.iloc[0]["exon_number"]), "exon"
 
-    # Intronic: return nearest exon by minimum distance to any boundary
-    distances = subset.apply(
-        lambda row: min(abs(pos - row["exon_start"]), abs(pos - row["exon_end"])),
-        axis=1,
-    )
-    nearest_idx = distances.idxmin()
+    # Intronic: return the exon whose end is the largest value ≤ pos.
+    # Correct for both strands without needing to inspect the strand column:
+    #   + strand (EML4): selects the last exon before the breakpoint (last retained).
+    #   - strand (ALK):  selects the transcript-downstream exon (first retained),
+    #                    because for minus-strand genes, downstream-in-transcript
+    #                    equals lower genomic coordinates, so its exon_end < pos.
+    upstream = subset[subset["exon_end"] <= pos]
+    if not upstream.empty:
+        nearest_idx = upstream["exon_end"].idxmax()
+        return int(subset.loc[nearest_idx, "exon_number"]), "intron"
+    # pos is upstream of all exons; return the first exon in the reference
+    nearest_idx = subset["exon_start"].idxmin()
     return int(subset.loc[nearest_idx, "exon_number"]), "intron"
 
 
@@ -145,7 +151,9 @@ def _min_dist_to_gene(chrom: str, pos: int, gene: str, exon_df: pd.DataFrame) ->
     return float(distances.min())
 
 
-def classify_fusion(row: pd.Series, exon_df: pd.DataFrame) -> tuple[str, list[str]]:
+def classify_fusion(
+    row: pd.Series, exon_df: pd.DataFrame
+) -> tuple[str, list[str], int, int]:
     """Classify a single fusion row into an EML4-ALK variant label.
 
     Implements the rules from Section 5 of fusions_app_spec.md:
@@ -160,32 +168,33 @@ def classify_fusion(row: pd.Series, exon_df: pd.DataFrame) -> tuple[str, list[st
         exon_df: DataFrame from load_exon_reference().
 
     Returns:
-        Tuple of (variant_label, warnings_list).
+        Tuple of (variant_label, warnings_list, eml4_exon_number, alk_exon_number).
+        Exon numbers are -1 when the breakpoint could not be resolved.
     """
     warnings: list[str] = []
     fusion_name = str(row.get("fusion_name", "")).strip()
 
     parts = fusion_name.replace(" ", "").split("-")
     if len(parts) < 2:
-        return "Not_EML4-ALK", warnings
+        return "Not_EML4-ALK", warnings, -1, -1
 
     gene_a, gene_b = parts[0].upper(), parts[1].upper()
     if "EML4" not in (gene_a, gene_b) or "ALK" not in (gene_a, gene_b):
-        return "Not_EML4-ALK", warnings
+        return "Not_EML4-ALK", warnings, -1, -1
 
     bp_a_raw = row.get("bp_a")
     bp_b_raw = row.get("bp_b")
 
     if pd.isna(bp_a_raw) or pd.isna(bp_b_raw):
         warnings.append(f"Row has NA breakpoint value (fusion: {fusion_name}).")
-        return "Unclassified_EML4-ALK", warnings
+        return "Unclassified_EML4-ALK", warnings, -1, -1
 
     try:
         chrom_a, pos_a = parse_breakpoint(str(bp_a_raw))
         chrom_b, pos_b = parse_breakpoint(str(bp_b_raw))
     except ValueError as exc:
         warnings.append(str(exc))
-        return "Unclassified_EML4-ALK", warnings
+        return "Unclassified_EML4-ALK", warnings, -1, -1
 
     # Auto-detect gene assignment by proximity: try both orientations and pick the
     # one where each breakpoint is closer to its assigned gene's exons.
@@ -209,14 +218,14 @@ def classify_fusion(row: pd.Series, exon_df: pd.DataFrame) -> tuple[str, list[st
         warnings.append(
             f"EML4 breakpoint {eml4_bp_raw} not found in reference (fusion: {fusion_name})."
         )
-        return "Unclassified_EML4-ALK", warnings
+        return "Unclassified_EML4-ALK", warnings, -1, -1
 
     alk_exon, alk_feature = lookup_exon("ALK", alk_chrom, alk_pos, exon_df)
     if alk_exon == -1:
         warnings.append(
             f"ALK breakpoint {alk_bp_raw} not found in reference (fusion: {fusion_name})."
         )
-        return "Unclassified_EML4-ALK", warnings
+        return "Unclassified_EML4-ALK", warnings, eml4_exon, -1
 
     rule_key = (eml4_exon, alk_exon)
     if rule_key in _VARIANT_RULES:
@@ -233,7 +242,7 @@ def classify_fusion(row: pd.Series, exon_df: pd.DataFrame) -> tuple[str, list[st
     if eml4_feature == "intron" or alk_feature == "intron":
         label = f"{label}_intron_junction"
 
-    return label, warnings
+    return label, warnings, eml4_exon, alk_exon
 
 
 def annotate_df(
@@ -258,6 +267,8 @@ def annotate_df(
     result = df.copy()
     all_warnings: list[str] = []
     labels: list[str] = []
+    gene_a_exons: list = []
+    gene_b_exons: list = []
 
     for _, row in df.iterrows():
         work_row = pd.Series({
@@ -265,11 +276,15 @@ def annotate_df(
             "bp_a": row[col_map["bp_a"]],
             "bp_b": row[col_map["bp_b"]],
         })
-        label, row_warnings = classify_fusion(work_row, exon_df)
+        label, row_warnings, eml4_exon, alk_exon = classify_fusion(work_row, exon_df)
         labels.append(label)
+        gene_a_exons.append(eml4_exon if eml4_exon != -1 else pd.NA)
+        gene_b_exons.append(alk_exon if alk_exon != -1 else pd.NA)
         all_warnings.extend(row_warnings)
 
     result["EML4-ALK_VariantType"] = labels
+    result["Gene_A_Exon"] = gene_a_exons
+    result["Gene_B_Exon"] = gene_b_exons
 
     seen: set[str] = set()
     unique_warnings: list[str] = []
