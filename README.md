@@ -1,4 +1,4 @@
-# fusion-annotator
+# Fusion Annotator
 
 A web app for classifying EML4-ALK gene fusions into known variant types given chromosomal breakpoint coordinates. Supports both hg19 (GRCh37) and hg38 (GRCh38).
 

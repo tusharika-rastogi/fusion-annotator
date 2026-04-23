@@ -11,8 +11,8 @@ import streamlit as st
 
 from annotator import annotate_df, load_exon_reference
 
-st.set_page_config(page_title="EML4-ALK Fusion Annotator", layout="centered")
-st.title("EML4-ALK Fusion Annotator")
+st.set_page_config(page_title="Fusion Annotator", layout="centered")
+st.title("Fusion Annotator")
 
 # ── Genome build selector ─────────────────────────────────────────────────────
 build = st.radio(
