@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.Rhistory
+test.csv
+.DS_Store
+._*
+.env
