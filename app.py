@@ -13,8 +13,6 @@ from annotator import annotate_df, load_exon_reference
 
 APP_VERSION = "v1.1.0"
 
-# Reference card data for UI update 2.
-# Keys are bare variant labels (without _intron_junction suffix).
 _VARIANT_CARD: dict[str, tuple[str, str, str]] = {
     "V1":                        ("13",       "20",  "Most common"),
     "V2":                        ("20",       "20",  ""),
@@ -23,38 +21,85 @@ _VARIANT_CARD: dict[str, tuple[str, str, str]] = {
     "EML4-ALK_OtherVariant":     ("≠ 6,13,20","20",  "Novel or rare EML4 exon"),
 }
 
-st.set_page_config(page_title="Fusion Annotator", layout="centered")
+st.set_page_config(page_title="Fusion Annotator", layout="wide")
 
-# ── Top-level navigation ──────────────────────────────────────────────────────
-nav_home, nav_docs = st.tabs(["Home", "Documentation"])
+st.markdown("""
+<style>
+.left-header {
+    background-color: #0D7377;
+    padding: 1.2rem 1.5rem;
+    border-radius: 0.5rem;
+    margin-bottom: 1rem;
+}
+.left-header h1 { color: white; font-size: 1.6rem; margin: 0; font-weight: 700; }
+.left-header p  { color: #A8D5D7; font-size: 0.85rem; margin: 0.25rem 0 0 0; }
+</style>
+""", unsafe_allow_html=True)
 
-with nav_docs:
-    st.markdown(f"### Fusion Annotator {APP_VERSION}")
+if "results" not in st.session_state:
+    st.session_state.results = None
+if "last_build" not in st.session_state:
+    st.session_state.last_build = "hg19"
+
+
+@st.cache_data
+def get_exon_df(genome_build: str) -> pd.DataFrame:
+    return load_exon_reference(genome_build)
+
+
+def _variant_ref_df() -> pd.DataFrame:
+    return pd.DataFrame([
+        {"Variant": k, "5′ Exon": v[0], "3′ Exon": v[1], "Notes": v[2]}
+        for k, v in _VARIANT_CARD.items()
+    ])
+
+
+def show_results(annotated: pd.DataFrame, warnings: list[str], filename: str) -> None:
+    if warnings:
+        st.warning("\n".join(warnings))
+
+    st.subheader("Annotated results")
+    st.dataframe(annotated, use_container_width=True)
+
+    st.subheader("Variant type counts")
+    freq = annotated["EML4-ALK_VariantType"].value_counts().reset_index()
+    if "count" in freq.columns:
+        freq = freq.rename(columns={"EML4-ALK_VariantType": "Variant type", "count": "Count"})
+    else:
+        freq = freq.rename(columns={"index": "Variant type", "EML4-ALK_VariantType": "Count"})
+    st.dataframe(freq, use_container_width=True)
+
+    csv_bytes = annotated.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        label="Download annotated CSV",
+        data=csv_bytes,
+        file_name=filename,
+        mime="text/csv",
+    )
+
+
+# ── Two-panel layout ──────────────────────────────────────────────────────────
+col_left, col_right = st.columns([5, 6], gap="large")
+
+with col_left:
     st.markdown(
-        "Full documentation, source code, and issue tracking are on GitHub."
-    )
-    st.link_button(
-        "Open documentation on GitHub",
-        "https://github.com/tusharika-rastogi/fusion-annotator",
+        f'<div class="left-header"><h1>Fusion Annotator</h1>'
+        f'<p>EML4-ALK variant classifier &nbsp;|&nbsp; {APP_VERSION}</p></div>',
+        unsafe_allow_html=True,
     )
 
-with nav_home:
-    st.title("Fusion Annotator")
-    st.caption(APP_VERSION)
-
-    # ── Genome build selector ─────────────────────────────────────────────────
     build = st.radio(
         "Genome build",
         options=["hg19", "hg38"],
         index=0,
         horizontal=True,
+        key="build_radio",
         help="Select the genome build that matches your breakpoint coordinates.",
     )
 
-    @st.cache_data
-    def get_exon_df(genome_build: str) -> pd.DataFrame:
-        """Load and cache the exon reference DataFrame for the given build."""
-        return load_exon_reference(genome_build)
+    if build != st.session_state.last_build:
+        st.session_state.results = None
+        st.session_state.last_build = build
 
     try:
         exon_df = get_exon_df(build)
@@ -62,65 +107,25 @@ with nav_home:
         st.error(str(e))
         st.stop()
 
-    def show_results(annotated: pd.DataFrame, warnings: list[str], filename: str) -> None:
-        """Render warnings, annotated table, frequency table, variant card, and download."""
-        if warnings:
-            st.warning("\n".join(warnings))
-
-        st.subheader("Annotated results")
-        st.dataframe(annotated, use_container_width=True)
-
-        st.subheader("Variant type counts")
-        freq = annotated["EML4-ALK_VariantType"].value_counts().reset_index()
-        if "count" in freq.columns:
-            freq = freq.rename(columns={"EML4-ALK_VariantType": "Variant type", "count": "Count"})
-        else:
-            freq = freq.rename(columns={"index": "Variant type", "EML4-ALK_VariantType": "Count"})
-        st.dataframe(freq, use_container_width=True)
-
-        # Variant description card — only rows for types present in this result set.
-        present_bare = {
-            v.replace("_intron_junction", "")
-            for v in annotated["EML4-ALK_VariantType"].unique()
-            if v in _VARIANT_CARD or v.replace("_intron_junction", "") in _VARIANT_CARD
-        }
-        card_rows = [
-            {"Variant": k, "EML4 exon": v[0], "ALK exon": v[1], "Notes": v[2]}
-            for k, v in _VARIANT_CARD.items()
-            if k in present_bare
-        ]
-        if card_rows:
-            st.subheader("Variant reference")
-            st.dataframe(pd.DataFrame(card_rows), use_container_width=True, hide_index=True)
-
-        csv_bytes = annotated.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            label="Download annotated CSV",
-            data=csv_bytes,
-            file_name=filename,
-            mime="text/csv",
-        )
-
     tab_single, tab_paste, tab_upload = st.tabs(["Single entry", "Paste rows", "Upload CSV"])
 
-    # ── Tab A: Single fusion manual entry ────────────────────────────────────
+    # ── Tab A: Single fusion manual entry ─────────────────────────────────────
     with tab_single:
-        st.markdown("Enter one fusion manually.")
-        sample_id = st.text_input("Sample ID (optional)", key="single_sample")
+        sample_id  = st.text_input("Sample ID (optional)", key="single_sample")
         fusion_name = st.text_input("Fusion name", value="EML4-ALK", key="single_name")
-        bp_a = st.text_input("Breakpoint A (e.g. 2_29446394)", key="single_bpa")
-        bp_b = st.text_input("Breakpoint B (e.g. 2_42522656)", key="single_bpb")
+        bp_a       = st.text_input("Breakpoint A (e.g. 2_29446394)", key="single_bpa")
+        bp_b       = st.text_input("Breakpoint B (e.g. 2_42522656)", key="single_bpb")
 
-        if st.button("Annotate", key="btn_single"):
+        if st.button("Annotate Fusion", key="btn_single", type="primary", use_container_width=True):
             if not fusion_name or not bp_a or not bp_b:
                 st.error("Fusion name, Breakpoint A, and Breakpoint B are required.")
             else:
                 try:
                     df_single = pd.DataFrame([{
-                        "sample_id": sample_id or "unknown",
+                        "sample_id":   sample_id or "unknown",
                         "fusion_name": fusion_name,
-                        "bp_a": bp_a,
-                        "bp_b": bp_b,
+                        "bp_a":        bp_a,
+                        "bp_b":        bp_b,
                     }])
                     col_map = {
                         "sample_id":   "sample_id",
@@ -129,7 +134,7 @@ with nav_home:
                         "bp_b":        "bp_b",
                     }
                     annotated, warnings = annotate_df(df_single, col_map, exon_df)
-                    show_results(annotated, warnings, f"fusions_annotated_{build}.csv")
+                    st.session_state.results = (annotated, warnings, f"fusions_annotated_{build}.csv")
                 except Exception as exc:
                     st.error(f"Annotation failed: {exc}")
 
@@ -166,10 +171,10 @@ with nav_home:
                     st.markdown("**Preview (first 5 rows)**")
                     st.dataframe(df_paste.head(5), use_container_width=True)
 
-                    if st.button("Annotate", key="btn_paste"):
+                    if st.button("Annotate Fusion", key="btn_paste", type="primary", use_container_width=True):
                         try:
                             annotated, warnings = annotate_df(df_paste, col_map_paste, exon_df)
-                            show_results(annotated, warnings, f"fusions_annotated_{build}.csv")
+                            st.session_state.results = (annotated, warnings, f"fusions_annotated_{build}.csv")
                         except Exception as exc:
                             st.error(f"Annotation failed: {exc}")
             except Exception as exc:
@@ -197,18 +202,37 @@ with nav_home:
                         "bp_a":        cols[2],
                         "bp_b":        cols[3],
                     }
-
                     st.markdown("**Preview (first 5 rows)**")
                     st.dataframe(df_upload.head(5), use_container_width=True)
 
                     base = uploaded.name.removesuffix(".csv")
                     out_filename = f"{base}_annotated_{build}.csv"
 
-                    if st.button("Annotate", key="btn_upload"):
+                    if st.button("Annotate Fusion", key="btn_upload", type="primary", use_container_width=True):
                         try:
                             annotated, warnings = annotate_df(df_upload, col_map_upload, exon_df)
-                            show_results(annotated, warnings, out_filename)
+                            st.session_state.results = (annotated, warnings, out_filename)
                         except Exception as exc:
                             st.error(f"Annotation failed: {exc}")
             except Exception as exc:
                 st.error(f"Could not read file: {exc}")
+
+with col_right:
+    st.subheader("EML4-ALK Variant Reference")
+    st.dataframe(_variant_ref_df(), use_container_width=True, hide_index=True)
+
+    st.divider()
+
+    if st.session_state.results is not None:
+        annotated, warnings, filename = st.session_state.results
+        show_results(annotated, warnings, filename)
+    else:
+        st.caption("After annotation, results appear here.")
+
+    with st.expander("Documentation"):
+        st.markdown(f"**Fusion Annotator {APP_VERSION}**")
+        st.markdown("Full documentation, source code, and issue tracking are on GitHub.")
+        st.link_button(
+            "Open documentation on GitHub",
+            "https://github.com/tusharika-rastogi/fusion-annotator",
+        )
