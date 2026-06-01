@@ -59,7 +59,7 @@ def show_results(annotated: pd.DataFrame, warnings: list[str], filename: str) ->
         st.warning("\n".join(warnings))
 
     st.subheader("Annotated results")
-    st.dataframe(annotated, use_container_width=True)
+    st.dataframe(annotated, use_container_width=True, hide_index=True)
 
     st.subheader("Variant type counts")
     freq = annotated["EML4-ALK_VariantType"].value_counts().reset_index()
@@ -67,7 +67,7 @@ def show_results(annotated: pd.DataFrame, warnings: list[str], filename: str) ->
         freq = freq.rename(columns={"EML4-ALK_VariantType": "Variant type", "count": "Count"})
     else:
         freq = freq.rename(columns={"index": "Variant type", "EML4-ALK_VariantType": "Count"})
-    st.dataframe(freq, use_container_width=True)
+    st.dataframe(freq, use_container_width=True, hide_index=True)
 
     csv_bytes = annotated.to_csv(index=False).encode("utf-8")
     st.download_button(
