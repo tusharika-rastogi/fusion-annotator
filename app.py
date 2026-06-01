@@ -11,7 +11,7 @@ import streamlit as st
 
 from annotator import annotate_df, load_exon_reference
 
-APP_VERSION = "v1.1.0"
+APP_VERSION = "v1.2.0"
 
 _VARIANT_CARD: dict[str, tuple[str, str, str]] = {
     "V1":                        ("13",       "20",  "Most common"),
@@ -111,6 +111,21 @@ with col_left:
 
     # ── Tab A: Single fusion manual entry ─────────────────────────────────────
     with tab_single:
+        # hg19 exon-midpoint coords for each canonical variant
+        _EXAMPLES = {
+            "V1 (exon 13–20)": ("EXAMPLE", "EML4-ALK", "2_42522588", "2_29446301"),
+            "V2 (exon 20–20)": ("EXAMPLE", "EML4-ALK", "2_42552650", "2_29446301"),
+            "V3a/b (exon 6–20)": ("EXAMPLE", "EML4-ALK", "2_42491858", "2_29446301"),
+        }
+        with st.expander("Try an example (hg19)"):
+            ex_cols = st.columns(len(_EXAMPLES))
+            for col, (label, vals) in zip(ex_cols, _EXAMPLES.items()):
+                if col.button(label, use_container_width=True):
+                    (st.session_state["single_sample"],
+                     st.session_state["single_name"],
+                     st.session_state["single_bpa"],
+                     st.session_state["single_bpb"]) = vals
+
         sample_id  = st.text_input("Sample ID (optional)", key="single_sample")
         fusion_name = st.text_input("Fusion name", value="EML4-ALK", key="single_name")
         bp_a       = st.text_input("Breakpoint A (e.g. 2_29446394)", key="single_bpa")
