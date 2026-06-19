@@ -18,7 +18,8 @@ Given a fusion name and two breakpoint coordinates, the app maps each breakpoint
 | 20 | 20 | `V2` | ~9% |
 | 6 | 20 | `V3a/b` | ~29%; RNA or long-read to distinguish a/b |
 | 15 | 20 | `V4` | ~2% |
-| 14 | 20 | `V4'` or `V7` | <1%; sub-classified by ALK intron 19 distance (see below) |
+| 14 | 20 | `V4'` | <1%; ALK bp ~49bp into intron 19 (see below) |
+| 14 | 20 | `V7` | <1%; ALK bp ~12bp into intron 19 (see below) |
 | 2 | 20 | `V5a/b` | ~2% |
 | 18 | 20 | `V5'` | ~2% |
 | 17 | 20 | `V8a/b` | <1% |
