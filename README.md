@@ -12,15 +12,32 @@ Given a fusion name and two breakpoint coordinates, the app maps each breakpoint
 
 ### Classification rules
 
-| EML4 exon | ALK exon | Label |
-|---|---|---|
-| 13 | 20 | `V1` |
-| 20 | 20 | `V2` |
-| 6 | 20 | `V3a/b` |
-| any | ≠ 20 | `EML4-ALK_NonCanonicalALK` |
-| ≠ 13, 20, 6 | 20 | `EML4-ALK_OtherVariant` |
+| EML4 exon | ALK exon | Label | Notes |
+|---|---|---|---|
+| 13 | 20 | `V1` | ~33%; V6 (E13;ins69A20) also maps here |
+| 20 | 20 | `V2` | ~9% |
+| 6 | 20 | `V3a/b` | ~29%; RNA or long-read to distinguish a/b |
+| 15 | 20 | `V4` | ~2% |
+| 14 | 20 | `V4'` or `V7` | <1%; sub-classified by ALK intron 19 distance (see below) |
+| 2 | 20 | `V5a/b` | ~2% |
+| 18 | 20 | `V5'` | ~2% |
+| 17 | 20 | `V8a/b` | <1% |
+| any | ≠ 20 | `EML4-ALK_NonCanonicalALK` | |
+| other | 20 | `EML4-ALK_OtherVariant` | Novel or uncharacterized EML4 exon |
 
 If either breakpoint falls in an intron, `_intron_junction` is appended (e.g. `V3a/b_intron_junction`). Non-EML4-ALK fusions are labeled `Not_EML4-ALK`.
+
+#### V4' vs V7 sub-classification
+
+Both V4' (E14;ins11del49A20) and V7 (E14;del12A20) involve EML4 exon 14 fused to ALK exon 20, but differ in how far the ALK breakpoint sits into intron 19. The app uses the exact ALK breakpoint coordinate to sub-classify:
+
+| Distance from ALK exon 20 boundary | Label |
+|---|---|
+| ≤ 20 bp | `V7` |
+| ≥ 40 bp | `V4'` |
+| 21–39 bp | `V4'/V7` (ambiguous) |
+
+A warning is emitted when the distance falls in the ambiguous zone. Thresholds are based on published breakpoint offsets (V7 ~12 bp, V4' ~49 bp; [PMC4761370](https://pmc.ncbi.nlm.nih.gov/articles/PMC4761370/)).
 
 ### Reference transcripts
 
