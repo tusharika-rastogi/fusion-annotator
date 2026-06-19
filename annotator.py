@@ -16,11 +16,64 @@ REFERENCE_FILES: dict[str, Path] = {
 }
 
 # Variant rules: (eml4_exon, alk_exon) -> label
+# Junction-level insertions/deletions (V4 del60, V5b ins117, V6 ins69, V8a/b ins30/ins61)
+# are not detectable from coarse breakpoint coordinates; those sub-variants are collapsed.
+# V4'/V7 are both E14:A20 but differ in how far the ALK breakpoint sits into intron 19
+# (V7 ~12bp, V4' ~49bp); sub-classified at runtime via _classify_v4prime_v7().
 _VARIANT_RULES: dict[tuple[int, int], str] = {
-    (13, 20): "V1",
+    (13, 20): "V1",       # V6 (E13;ins69A20) also maps here; distinguish by junction seq
     (20, 20): "V2",
-    (6, 20): "V3a/b",
+    (6,  20): "V3a/b",
+    (15, 20): "V4",
+    (14, 20): "V4'/V7",  # refined to V4' or V7 by intron distance at runtime
+    (2,  20): "V5a/b",
+    (18, 20): "V5'",
+    (17, 20): "V8a/b",
 }
+
+# Distance thresholds (bp from ALK exon 20 boundary) for V4'/V7 sub-classification.
+# V7: E14;del12A20 → breakpoint ~12bp into intron 19
+# V4': E14;ins11del49A20 → breakpoint ~49bp into intron 19
+_V4P_V7_V7_MAX = 20    # ≤ this → V7
+_V4P_V7_V4P_MIN = 40   # ≥ this → V4'
+
+
+def _classify_v4prime_v7(
+    alk_chrom: str, alk_pos: int, exon_df: pd.DataFrame
+) -> tuple[str, str]:
+    """Sub-classify an E14:A20 fusion as V4', V7, or V4'/V7 (ambiguous).
+
+    Uses the distance from the ALK breakpoint to the nearest boundary of ALK exon 20.
+    V7 (del12) places the breakpoint ~12bp into intron 19; V4' (del49) ~49bp.
+
+    Args:
+        alk_chrom: Chromosome of the ALK breakpoint (no 'chr' prefix).
+        alk_pos: Genomic position of the ALK breakpoint.
+        exon_df: DataFrame from load_exon_reference().
+
+    Returns:
+        Tuple of (label, warning). Warning is empty string when classification is unambiguous.
+    """
+    exon20 = exon_df[
+        (exon_df["gene"] == "ALK") &
+        (exon_df["chrom"] == alk_chrom) &
+        (exon_df["exon_number"] == 20)
+    ]
+    if exon20.empty:
+        return "V4'/V7", "Could not locate ALK exon 20 in reference; E14:A20 fusion reported as V4'/V7."
+
+    row = exon20.iloc[0]
+    dist = int(min(abs(alk_pos - row["exon_start"]), abs(alk_pos - row["exon_end"])))
+
+    if dist <= _V4P_V7_V7_MAX:
+        return "V7", ""
+    if dist >= _V4P_V7_V4P_MIN:
+        return "V4'", ""
+    return "V4'/V7", (
+        f"ALK breakpoint is {dist}bp from ALK exon 20 boundary "
+        f"(V7 ≤{_V4P_V7_V7_MAX}bp, V4' ≥{_V4P_V7_V4P_MIN}bp); "
+        "reported as V4'/V7 (ambiguous)."
+    )
 
 
 def load_exon_reference(build: str = "hg38") -> pd.DataFrame:
@@ -230,12 +283,17 @@ def classify_fusion(
     rule_key = (eml4_exon, alk_exon)
     if rule_key in _VARIANT_RULES:
         label = _VARIANT_RULES[rule_key]
+        if label == "V4'/V7":
+            label, sub_warn = _classify_v4prime_v7(alk_chrom, alk_pos, exon_df)
+            if sub_warn:
+                warnings.append(sub_warn)
     elif alk_exon != 20:
         label = "EML4-ALK_NonCanonicalALK"
     else:
         label = "EML4-ALK_OtherVariant"
         warnings.append(
-            f"Unexpected EML4 exon {eml4_exon} found in fusion '{fusion_name}'. "
+            f"Unexpected EML4 exon {eml4_exon} found in fusion '{fusion_name}' "
+            "(known exons: 2, 6, 13, 14, 15, 17, 18, 20). "
             "Labeled as EML4-ALK_OtherVariant."
         )
 

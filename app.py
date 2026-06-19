@@ -14,11 +14,18 @@ from annotator import annotate_df, load_exon_reference
 APP_VERSION = "v1.2.0"
 
 _VARIANT_CARD: dict[str, tuple[str, str, str]] = {
-    "V1":                        ("13",       "20",  "Most common"),
-    "V2":                        ("20",       "20",  ""),
-    "V3a/b":                     ("6",        "20",  "Two sub-variants; RNA or long-read required to distinguish"),
-    "EML4-ALK_NonCanonicalALK":  ("any",      "≠ 20", "Rare; verify caller output"),
-    "EML4-ALK_OtherVariant":     ("≠ 6,13,20","20",  "Novel or rare EML4 exon"),
+    "V1":                       ("13",                       "20",   "Most common (~33%); V6 (E13;ins69A20) also maps here"),
+    "V2":                       ("20",                       "20",   "~9%"),
+    "V3a/b":                    ("6",                        "20",   "~29%; RNA or long-read required to distinguish a/b"),
+    "V4":                       ("15",                       "20",   "Rare (~2%); deletions at junction"),
+    "V4'":                      ("14",                       "20",   "Rare (<1%); ALK bp ~49bp into intron 19 (ins11del49 at junction)"),
+    "V7":                       ("14",                       "20",   "Rare (<1%); ALK bp ~12bp into intron 19 (del12 at junction)"),
+    "V4'/V7":                   ("14",                       "20",   "Rare (<1%); ambiguous — ALK bp distance falls between V7 and V4' thresholds"),
+    "V5a/b":                    ("2",                        "20",   "Rare (~2%); sub-variant requires junction sequencing"),
+    "V5'":                      ("18",                       "20",   "Rare (~2%)"),
+    "V8a/b":                    ("17",                       "20",   "Very rare (<1%); two sub-variants differ in functional ALK domain"),
+    "EML4-ALK_NonCanonicalALK": ("any",                      "≠ 20", "Rare; verify caller output"),
+    "EML4-ALK_OtherVariant":    ("≠ 2,6,13,14,15,17,18,20", "20",   "Novel or uncharacterized EML4 exon"),
 }
 
 st.set_page_config(page_title="Fusion Annotator", layout="wide")
