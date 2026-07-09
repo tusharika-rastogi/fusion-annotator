@@ -1,5 +1,24 @@
 """
-Build EML4/ALK exon reference tables from Ensembl BioMart for hg38 and hg19.
+LEGACY / RETIRED: builds the old single-transcript Ensembl BioMart CSV schema
+(gene, exon_number, chrom, exon_start, exon_end, strand) that annotator.py no
+longer reads. annotator.py now loads reference/eml4_alk_exons_{build}.tsv,
+whole-genome UCSC RefSeq (refGene) dumps, filtered at load time to
+NM_019063.5 (EML4) and NM_004304.5 (ALK) -- see load_exon_reference() and
+_CANONICAL_TRANSCRIPTS in annotator.py.
+
+To regenerate the current .tsv reference files, pull the UCSC refGene table
+for the build in question (e.g. via the UCSC Table Browser or `hgsql`/
+`genome-mysql.soe.ucsc.edu`) with columns
+name, chrom, strand, exonStarts, exonEnds, name2 and save as
+reference/eml4_alk_exons_{build}.tsv. No filtering to EML4/ALK is required at
+export time -- annotator.py filters on load.
+
+This script is kept for provenance/history only and is not part of the
+current reference build path.
+
+---
+
+Original docstring (BioMart-based EML4/ALK exon fetch):
 
 Queries canonical transcripts:
   - EML4: ENST00000318522

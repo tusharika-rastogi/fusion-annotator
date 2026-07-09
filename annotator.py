@@ -11,8 +11,26 @@ import pandas as pd
 REFERENCE_DIR = Path(__file__).parent / "reference"
 
 REFERENCE_FILES: dict[str, Path] = {
-    "hg38": REFERENCE_DIR / "eml4_alk_exons_hg38.csv",
-    "hg19": REFERENCE_DIR / "eml4_alk_exons_hg19.csv",
+    "hg38": REFERENCE_DIR / "eml4_alk_exons_hg38.tsv",
+    "hg19": REFERENCE_DIR / "eml4_alk_exons_hg19.tsv",
+}
+
+# Canonical transcripts used for exon numbering (matches existing _VARIANT_RULES keys).
+# XM_/XR_ predicted models and alternate NM_ transcripts are excluded so exon numbers
+# stay stable.
+_CANONICAL_TRANSCRIPTS: dict[str, str] = {
+    "EML4": "NM_019063.5",
+    "ALK": "NM_004304.5",
+}
+
+# EML4 exon 6 end -> micro-exon end (1-based), used to sub-classify the (6, 20)
+# rule key into V3a vs V3b. The micro-exon (from transcript NM_001410776.1, not
+# used for exon numbering) is the 33bp intron-6-derived insertion described by
+# Choi et al. 2008 (PMID 18593892). Keyed by exon 6 end so the genome build is
+# derived from exon_df's own coordinates rather than needing a build parameter.
+_V3B_MICROEXON_END_BY_EXON6_END: dict[int, int] = {
+    42491871: 42492091,  # hg19
+    42264731: 42264951,  # hg38
 }
 
 # Variant rules: (eml4_exon, alk_exon) -> label
@@ -76,8 +94,45 @@ def _classify_v4prime_v7(
     )
 
 
+def _is_v3_known_junction(eml4_pos: int, exon_df: pd.DataFrame) -> tuple[bool, str]:
+    """Check whether an E6:A20 (V3a/b) breakpoint lands on a known splice junction.
+
+    Covers both the clean junction at EML4 exon 6's end and the junction at the
+    end of the 33bp intron-6-derived micro-exon (transcript NM_001410776.1).
+    Both are real, literature-confirmed splice junctions, not data-quality
+    issues -- V3a vs V3b are not reported as separate labels (both stay
+    `V3a/b`), but neither should get the `_intron_junction` suffix.
+
+    Args:
+        eml4_pos: Genomic position of the EML4 breakpoint.
+        exon_df: DataFrame from load_exon_reference().
+
+    Returns:
+        Tuple of (is_known_junction, warning). is_known_junction is True when
+        the breakpoint lands exactly on a known splice junction, so the caller
+        should not append '_intron_junction' even though the position falls
+        outside EML4 exon 6 as defined in exon_df.
+    """
+    exon6 = exon_df[(exon_df["gene"] == "EML4") & (exon_df["exon_number"] == 6)]
+    if exon6.empty:
+        return False, "Could not locate EML4 exon 6 in reference; E6:A20 fusion reported as V3a/b."
+
+    exon6_end = int(exon6.iloc[0]["exon_end"])
+    if eml4_pos == exon6_end:
+        return True, ""
+
+    microexon_end = _V3B_MICROEXON_END_BY_EXON6_END.get(exon6_end)
+    if microexon_end is not None and eml4_pos == microexon_end:
+        return True, ""
+
+    return False, ""
+
+
 def load_exon_reference(build: str = "hg38") -> pd.DataFrame:
-    """Load the exon reference CSV for the given genome build.
+    """Load the exon reference table for the given genome build.
+
+    Reads the whole-genome UCSC RefSeq (refGene) table, filters to the
+    canonical EML4/ALK transcripts, and explodes each into one row per exon.
 
     Args:
         build: Genome build string, either 'hg38' or 'hg19'.
@@ -97,7 +152,32 @@ def load_exon_reference(build: str = "hg38") -> pd.DataFrame:
             f"Exon reference not found at {path}. "
             "Run scripts/build_exon_reference.py to generate it."
         )
-    df = pd.read_csv(path)
+
+    raw = pd.read_csv(path, sep="\t")
+    transcript_to_gene = {v: k for k, v in _CANONICAL_TRANSCRIPTS.items()}
+    raw = raw[raw["#name"].isin(transcript_to_gene)]
+
+    rows: list[dict] = []
+    for _, tx in raw.iterrows():
+        gene = transcript_to_gene[tx["#name"]]
+        chrom = str(tx["chrom"]).removeprefix("chr")
+        strand = tx["strand"]
+        starts = [int(s) + 1 for s in str(tx["exonStarts"]).split(",") if s]
+        ends = [int(e) for e in str(tx["exonEnds"]).split(",") if e]
+        n_exons = len(starts)
+
+        for i, (start, end) in enumerate(zip(starts, ends)):
+            exon_number = i + 1 if strand == "+" else n_exons - i
+            rows.append({
+                "gene": gene,
+                "exon_number": exon_number,
+                "chrom": chrom,
+                "exon_start": start,
+                "exon_end": end,
+                "strand": strand,
+            })
+
+    df = pd.DataFrame(rows)
     df["exon_number"] = df["exon_number"].astype(int)
     df["exon_start"] = df["exon_start"].astype(int)
     df["exon_end"] = df["exon_end"].astype(int)
@@ -281,10 +361,15 @@ def classify_fusion(
         return "Unclassified_EML4-ALK", warnings, eml4_exon, -1
 
     rule_key = (eml4_exon, alk_exon)
+    v3_exon_boundary = False
     if rule_key in _VARIANT_RULES:
         label = _VARIANT_RULES[rule_key]
         if label == "V4'/V7":
             label, sub_warn = _classify_v4prime_v7(alk_chrom, alk_pos, exon_df)
+            if sub_warn:
+                warnings.append(sub_warn)
+        elif label == "V3a/b":
+            v3_exon_boundary, sub_warn = _is_v3_known_junction(eml4_pos, exon_df)
             if sub_warn:
                 warnings.append(sub_warn)
     elif alk_exon != 20:
@@ -297,7 +382,7 @@ def classify_fusion(
             "Labeled as EML4-ALK_OtherVariant."
         )
 
-    if eml4_feature == "intron" or alk_feature == "intron":
+    if (eml4_feature == "intron" and not v3_exon_boundary) or alk_feature == "intron":
         label = f"{label}_intron_junction"
 
     return label, warnings, eml4_exon, alk_exon
