@@ -2,9 +2,9 @@
 
 A web app for classifying EML4-ALK gene fusions into known variant types from splice-junction breakpoint coordinates reported by RNA-level fusion callers (e.g. STAR-Fusion, Arriba). Supports both hg19 (GRCh37) and hg38 (GRCh38).
 
-DNA-level coordinates from structural variant callers (e.g. DELLY, Manta) may land inside an intron rather than at an exon boundary. The app will still attempt classification by resolving the intronic position to the nearest splice-junction exon, but this use case has not been systematically validated — results will carry the `_intron_junction` suffix (see below).
-
 **Try it:** [fusion-annotator.streamlit.app](https://fusion-annotator.streamlit.app)
+
+Fair warning: if nobody's poked the app in a while, Streamlit puts it down for a nap. If you land on a "Yes, get this app back up!" button instead of the annotator, that's your cue — give it a click and a few seconds to rub the sleep out of its eyes before you start annotating.
 
 ---
 
@@ -33,6 +33,8 @@ Exon numbers below represent the splice junction, not the raw genomic breakpoint
 | other | 20 | `EML4-ALK_OtherVariant` | Novel or uncharacterized EML4 exon |
 
 If either breakpoint does not fall within an annotated exon of the reference transcript, `_intron_junction` is appended (e.g. `V3a/b_intron_junction`). This does **not** mean the RNA read is unspliced or low-confidence — it means the fusion transcript's actual splice junction doesn't match the exon boundaries of the single reference transcript this tool checks against. This is frequently real, reproducible biology: some EML4-ALK isoforms splice at a site inside what the reference transcript calls an intron (e.g. V3b retains a 33-bp EML4 micro-exon not present in the canonical transcript; see Choi et al. 2008, PMID 18593892). **Do not treat `_intron_junction` as a quality filter** — dropping these rows from downstream analysis will disproportionately remove specific variant sub-types rather than removing noise. Non-EML4-ALK fusions are labeled `Not_EML4-ALK`.
+
+DNA-level coordinates from structural variant callers (e.g. DELLY, Manta) may land inside an intron rather than at an exon boundary. The app will still attempt classification by resolving the intronic position to the nearest splice-junction exon, but this use case has not been systematically validated — results will carry the `_intron_junction` suffix as described above.
 
 #### V3a/b and the micro-exon junction
 
