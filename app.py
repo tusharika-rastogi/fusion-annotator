@@ -56,7 +56,7 @@ def get_exon_df(genome_build: str) -> pd.DataFrame:
 
 def _variant_ref_df() -> pd.DataFrame:
     return pd.DataFrame([
-        {"Variant": k, "5′ Exon": v[0], "3′ Exon": v[1], "Notes": v[2]}
+        {"Variant": k, "5′ Exon (EML4)": v[0], "3′ Exon (ALK)": v[1], "Notes": v[2]}
         for k, v in _VARIANT_CARD.items()
     ])
 
