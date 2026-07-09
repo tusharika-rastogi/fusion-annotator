@@ -34,7 +34,7 @@ Exon numbers below represent the splice junction, not the raw genomic breakpoint
 
 If either breakpoint does not fall within an annotated exon of the reference transcript, `_intron_junction` is appended (e.g. `V3a/b_intron_junction`). This does **not** mean the RNA read is unspliced or low-confidence — it means the fusion transcript's actual splice junction doesn't match the exon boundaries of the single reference transcript this tool checks against. This is frequently real, reproducible biology: some EML4-ALK isoforms splice at a site inside what the reference transcript calls an intron (e.g. V3b retains a 33-bp EML4 micro-exon not present in the canonical transcript; see Choi et al. 2008, PMID 18593892). **Do not treat `_intron_junction` as a quality filter** — dropping these rows from downstream analysis will disproportionately remove specific variant sub-types rather than removing noise. Non-EML4-ALK fusions are labeled `Not_EML4-ALK`.
 
-DNA-level coordinates from structural variant callers (e.g. DELLY, Manta) may land inside an intron rather than at an exon boundary. The app will still attempt classification by resolving the intronic position to the nearest splice-junction exon, but this use case has not been systematically validated — results will carry the `_intron_junction` suffix as described above.
+DNA-level breakpoints (from structural variant / inversion callers) are handled differently: see "Assay type" below.
 
 #### V3a/b and the micro-exon junction
 
@@ -47,6 +47,13 @@ EML4 exon 6 fused to ALK exon 20 is reported as `V3a/b` regardless of whether th
 | any other intronic position | `V3a/b_intron_junction` (ambiguous) |
 
 The micro-exon junction (from transcript `NM_001410776.1`) is literature-confirmed: Choi et al. 2008 (PMID 18593892) describes the original 33-bp intron-6 insertion; Wang et al. 2022 (PMID 36423218) reports it as "E6ins33;A20"; Hunt et al. 2023 (PMID 37255276) confirms the exact breakpoint coordinate.
+
+#### Assay type: RNA vs DNA
+
+Every input row specifies an **assay type**, `RNA` or `DNA`, which changes how an intronic breakpoint is reported:
+
+- **RNA** (the default if unspecified): an intronic breakpoint means the fusion transcript's splice junction doesn't match the reference transcript's exon boundaries, which is unexpected for RNA-level data — gets the `_intron_junction` suffix (see above).
+- **DNA**: EML4-ALK forms via a genomic inversion, so DNA-level breakpoints are *expected* to fall inside introns (splicing hasn't happened yet at the DNA level) — this isn't an exception worth flagging, so **no suffix is added**. A DNA-level E6:A20 breakpoint is reported simply as `V3a/b`, same as a clean RNA junction, since DNA data can't distinguish V3a from V3b anyway (that requires knowing the mRNA splicing outcome, which isn't encoded in the genomic breakpoint).
 
 #### V4' vs V7 sub-classification
 
@@ -83,7 +90,7 @@ The app supports three input modes:
 
 ### Single entry
 
-Enter one fusion manually: sample ID (optional), fusion name, Breakpoint A, and Breakpoint B.
+Enter one fusion manually: sample ID (optional), assay type (RNA/DNA), fusion name, Breakpoint A, and Breakpoint B.
 
 ### Paste rows
 
@@ -92,15 +99,16 @@ Paste tab- or comma-separated data including a header row. Columns are read by p
 | Position | Field |
 |---|---|
 | 1st | Sample ID |
-| 2nd | Fusion name (e.g. `EML4-ALK`) |
-| 3rd | Breakpoint A |
-| 4th | Breakpoint B |
+| 2nd | Assay type (`RNA` or `DNA` — see above) |
+| 3rd | Fusion name (e.g. `EML4-ALK`) |
+| 4th | Breakpoint A |
+| 5th | Breakpoint B |
 
 Example:
 
 ```
-Sample	Fusion	BreakpointA	BreakpointB
-PT001	EML4-ALK	2_29446394	2_42522656
+Sample	AssayType	Fusion	BreakpointA	BreakpointB
+PT001	RNA	EML4-ALK	2_29446394	2_42522656
 ```
 
 A 5-row preview is shown before annotating.
@@ -109,7 +117,7 @@ Column order for the two breakpoint fields does not matter — see auto-assignme
 
 ### Upload CSV
 
-Upload a CSV file with the same four-column structure (header row required, same silent-drop caveat as above). A 5-row preview is shown before annotating.
+Upload a CSV file with the same five-column structure (header row required, same silent-drop caveat as above). A 5-row preview is shown before annotating.
 
 ### Output
 
@@ -117,7 +125,7 @@ Results are shown on-screen as a table, plus a variant-type frequency summary, a
 
 | Column | Meaning |
 |---|---|
-| `EML4-ALK_VariantType` | The variant label (e.g. `V3a/b`, `V2`, `Not_EML4-ALK`), with `_intron_junction` appended where applicable |
+| `EML4-ALK_VariantType` | The variant label (e.g. `V3a/b`, `V2`, `Not_EML4-ALK`), with `_intron_junction` appended for an intronic RNA breakpoint (never appended for DNA — see Assay type above) |
 | `Gene_A_Exon` | The **EML4** exon number, regardless of which input column (Breakpoint A or B) that coordinate came from |
 | `Gene_B_Exon` | The **ALK** exon number, regardless of which input column that coordinate came from |
 

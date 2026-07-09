@@ -120,20 +120,33 @@ with col_left:
     with tab_single:
         # hg19 exon-midpoint coords for each canonical variant
         _EXAMPLES = {
-            "V1 (exon 13–20)": ("EXAMPLE", "EML4-ALK", "2_42522588", "2_29446301"),
-            "V2 (exon 20–20)": ("EXAMPLE", "EML4-ALK", "2_42552650", "2_29446301"),
-            "V3a/b (exon 6–20)": ("EXAMPLE", "EML4-ALK", "2_42491858", "2_29446301"),
+            "V1 (exon 13–20)": ("EXAMPLE", "RNA", "EML4-ALK", "2_42522588", "2_29446301"),
+            "V2 (exon 20–20)": ("EXAMPLE", "RNA", "EML4-ALK", "2_42552650", "2_29446301"),
+            "V3a/b (exon 6–20)": ("EXAMPLE", "RNA", "EML4-ALK", "2_42491858", "2_29446301"),
         }
         with st.expander("Try an example (hg19)"):
             ex_cols = st.columns(len(_EXAMPLES))
             for col, (label, vals) in zip(ex_cols, _EXAMPLES.items()):
                 if col.button(label, use_container_width=True):
                     (st.session_state["single_sample"],
+                     st.session_state["single_assay"],
                      st.session_state["single_name"],
                      st.session_state["single_bpa"],
                      st.session_state["single_bpb"]) = vals
 
         sample_id  = st.text_input("Sample ID (optional)", key="single_sample")
+        assay_type = st.radio(
+            "Assay type",
+            options=["RNA", "DNA"],
+            horizontal=True,
+            key="single_assay",
+            help=(
+                "RNA: breakpoint is expected at a splice junction; an intronic "
+                "result gets the '_intron_junction' suffix. DNA: breakpoint is "
+                "expected inside an intron (that's how EML4-ALK forms genomically), "
+                "so no suffix is added -- it isn't a data-quality signal for DNA input."
+            ),
+        )
         fusion_name = st.text_input("Fusion name", value="EML4-ALK", key="single_name")
         bp_a       = st.text_input("Breakpoint A (e.g. 2_29446394)", key="single_bpa")
         bp_b       = st.text_input("Breakpoint B (e.g. 2_42522656)", key="single_bpb")
@@ -145,12 +158,14 @@ with col_left:
                 try:
                     df_single = pd.DataFrame([{
                         "sample_id":   sample_id or "unknown",
+                        "assay_type":  assay_type,
                         "fusion_name": fusion_name,
                         "bp_a":        bp_a,
                         "bp_b":        bp_b,
                     }])
                     col_map = {
                         "sample_id":   "sample_id",
+                        "assay_type":  "assay_type",
                         "fusion_name": "fusion_name",
                         "bp_a":        "bp_a",
                         "bp_b":        "bp_b",
@@ -164,14 +179,17 @@ with col_left:
     with tab_paste:
         st.markdown(
             "Paste tab- or comma-separated rows including a header row. "
-            "Column order: **Sample ID, Fusion name, Breakpoint A, Breakpoint B**."
+            "Column order: **Sample ID, Assay type (RNA/DNA), Fusion name, Breakpoint A, Breakpoint B**. "
+            "For RNA, an intronic breakpoint gets the `_intron_junction` suffix. "
+            "For DNA, intronic is expected (that's how EML4-ALK forms genomically), "
+            "so no suffix is added."
         )
         pasted = st.text_area(
             "Paste data here",
             height=200,
             placeholder=(
-                "Sample\tFusion\tBreakpointA\tBreakpointB\n"
-                "PT001\tEML4-ALK\t2_29446394\t2_42522656"
+                "Sample\tAssayType\tFusion\tBreakpointA\tBreakpointB\n"
+                "PT001\tRNA\tEML4-ALK\t2_29446394\t2_42522656"
             ),
             key="paste_area",
         )
@@ -180,15 +198,16 @@ with col_left:
             try:
                 sep = "\t" if "\t" in pasted else ","
                 df_paste = pd.read_csv(io.StringIO(pasted), sep=sep, dtype=str)
-                if df_paste.shape[1] < 4:
-                    st.error("Need at least 4 columns. Check your separator (tab or comma).")
+                if df_paste.shape[1] < 5:
+                    st.error("Need at least 5 columns. Check your separator (tab or comma).")
                 else:
                     cols = df_paste.columns.tolist()
                     col_map_paste = {
                         "sample_id":   cols[0],
-                        "fusion_name": cols[1],
-                        "bp_a":        cols[2],
-                        "bp_b":        cols[3],
+                        "assay_type":  cols[1],
+                        "fusion_name": cols[2],
+                        "bp_a":        cols[3],
+                        "bp_b":        cols[4],
                     }
                     st.markdown("**Preview (first 5 rows)**")
                     st.dataframe(df_paste.head(5), use_container_width=True)
@@ -206,7 +225,11 @@ with col_left:
     with tab_upload:
         st.markdown(
             "Upload a CSV file. Column order (names may vary): "
-            "**1st = Sample ID, 2nd = Fusion name, 3rd = Breakpoint A, 4th = Breakpoint B**. "
+            "**1st = Sample ID, 2nd = Assay type (RNA/DNA), 3rd = Fusion name, "
+            "4th = Breakpoint A, 5th = Breakpoint B**. "
+            "For RNA, an intronic breakpoint gets the `_intron_junction` suffix. "
+            "For DNA, intronic is expected (that's how EML4-ALK forms genomically), "
+            "so no suffix is added. "
             "A 5-row preview is shown before annotating."
         )
         uploaded = st.file_uploader("Choose a CSV file", type=["csv"], key="upload_file")
@@ -214,15 +237,16 @@ with col_left:
         if uploaded is not None:
             try:
                 df_upload = pd.read_csv(uploaded, dtype=str)
-                if df_upload.shape[1] < 4:
-                    st.error("File must have at least 4 columns.")
+                if df_upload.shape[1] < 5:
+                    st.error("File must have at least 5 columns.")
                 else:
                     cols = df_upload.columns.tolist()
                     col_map_upload = {
                         "sample_id":   cols[0],
-                        "fusion_name": cols[1],
-                        "bp_a":        cols[2],
-                        "bp_b":        cols[3],
+                        "assay_type":  cols[1],
+                        "fusion_name": cols[2],
+                        "bp_a":        cols[3],
+                        "bp_b":        cols[4],
                     }
                     st.markdown("**Preview (first 5 rows)**")
                     st.dataframe(df_upload.head(5), use_container_width=True)

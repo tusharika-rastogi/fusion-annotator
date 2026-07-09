@@ -294,10 +294,15 @@ def classify_fusion(
       2. Auto-assign each breakpoint to EML4 or ALK by proximity to the reference.
       3. Look up exon number and feature type (exon/intron) for each breakpoint.
       4. Apply variant rules (V1, V2, V3a/b, NonCanonicalALK, OtherVariant).
-      5. Append '_intron_junction' if either breakpoint is intronic.
+      5. For RNA input, append '_intron_junction' if either breakpoint is
+         intronic (may indicate a real cryptic/retained-intron splice isoform,
+         or a caller artifact). Not applied to DNA input, since genomic DNA
+         breakpoints for this fusion are expected to fall inside introns --
+         splicing only happens at the RNA level, so intronic isn't exceptional.
 
     Args:
-        row: Pandas Series with keys 'fusion_name', 'bp_a', 'bp_b'.
+        row: Pandas Series with keys 'fusion_name', 'bp_a', 'bp_b', and
+             optionally 'assay_type' ('RNA' or 'DNA'; defaults to 'RNA').
         exon_df: DataFrame from load_exon_reference().
 
     Returns:
@@ -306,6 +311,7 @@ def classify_fusion(
     """
     warnings: list[str] = []
     fusion_name = str(row.get("fusion_name", "")).strip()
+    is_dna = str(row.get("assay_type", "RNA")).strip().upper() == "DNA"
 
     parts = fusion_name.replace(" ", "").split("-")
     if len(parts) < 2:
@@ -382,7 +388,10 @@ def classify_fusion(
             "Labeled as EML4-ALK_OtherVariant."
         )
 
-    if (eml4_feature == "intron" and not v3_exon_boundary) or alk_feature == "intron":
+    # DNA-level breakpoints for this fusion are expected to land in an intron
+    # (splicing hasn't happened yet), so an intronic position isn't an
+    # exception worth flagging the way it is for RNA-level input.
+    if not is_dna and ((eml4_feature == "intron" and not v3_exon_boundary) or alk_feature == "intron"):
         label = f"{label}_intron_junction"
 
     return label, warnings, eml4_exon, alk_exon
@@ -399,7 +408,11 @@ def annotate_df(
         df: Input DataFrame with at least columns for fusion_name, bp_a, bp_b.
         col_map: Dict mapping logical names to actual column names:
                  {"fusion_name": ..., "bp_a": ..., "bp_b": ...}
-                 "sample_id" is optional.
+                 "sample_id" and "assay_type" are optional. When "assay_type" is
+                 mapped, its per-row value ('RNA' or 'DNA') controls whether an
+                 intronic breakpoint gets the '_intron_junction' or
+                 '_DNA_breakpoint' suffix (see classify_fusion()); rows without
+                 it default to 'RNA'.
         exon_df: DataFrame from load_exon_reference().
 
     Returns:
@@ -418,6 +431,7 @@ def annotate_df(
             "fusion_name": row[col_map["fusion_name"]],
             "bp_a": row[col_map["bp_a"]],
             "bp_b": row[col_map["bp_b"]],
+            "assay_type": row[col_map["assay_type"]] if "assay_type" in col_map else "RNA",
         })
         label, row_warnings, eml4_exon, alk_exon = classify_fusion(work_row, exon_df)
         labels.append(label)
