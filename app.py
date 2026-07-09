@@ -11,7 +11,7 @@ import streamlit as st
 
 from annotator import annotate_df, load_exon_reference
 
-APP_VERSION = "v1.4.0"
+APP_VERSION = "v1.5.0"
 
 _VARIANT_CARD: dict[str, tuple[str, str, str]] = {
     "V1":                       ("13",                       "20",   "Most common (~33%); V6 (E13;ins69A20) also maps here"),
